@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Secret Santa</title>
+
+    <!-- Firebase SDK v8 -->
+    <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-firestore.js"></script>
+
+    <style>
+        .box-container {
+            display: inline-block;
+            margin: 10px;
+            text-align: center;
+        }
+
+        .token {
+            font-size: 14px;
+            margin-bottom: 5px;
+            color: #333;
+        }
+
+        .box {
+            width: 100px;
+            height: 100px;
+            margin: 10px;
+            border: 2px solid #333;
+            text-align: center;
+            line-height: 100px;
+            cursor: pointer;
+            background-color: #ccc;
+            transition: background-color 0.3s ease;
+        }
+
+        .box:hover {
+            background-color: #aaa;
+        }
+
+        .box.opened {
+            background-color: #f0f0f0;
+            cursor: not-allowed;
+            /* Prevent further clicks */
+        }
+
+        .box.opened:hover {
+            background-color: #f0f0f0;
+        }
+    </style>
+</head>
+
+<body>
+    <h1>Secret Santa Registration</h1>
+    <form id="user-form">
+        <label for="name">Name:</label><br>
+        <input type="text" id="name" name="name" required><br><br>
+        <button type="submit">Join Secret Santa</button>
+    </form>
+
+    <h2>Participants</h2>
+    <ul id="participants-list">
+        <!-- Participants list will be populated here -->
+    </ul>
+
+    <h2>Choose Your Box</h2>
+    <div id="boxes-container">
+        <!-- The boxes will be created dynamically here -->
+    </div>
+
+    <script>
+        // Your Firebase config
+        const firebaseConfig = {
+            apiKey: "AIzaSyAgV5cDkPAjRUe-PBG1RBsDfC_v7nLQyJ4",
+            authDomain: "secret-santa-78a8f.firebaseapp.com",
+            projectId: "secret-santa-78a8f",
+            storageBucket: "secret-santa-78a8f.firebasestorage.app",
+            messagingSenderId: "47402412334",
+            appId: "1:47402412334:web:f8cf1a82d79caa0db072bf",
+            measurementId: "G-GLTZNG043F"
+        };
+
+        // Initialize Firebase
+        firebase.initializeApp(firebaseConfig);
+        const db = firebase.firestore(); // Firestore instance
+
+        // Predefined participants' names in boxes
+        const participants = [
+            "Engy Osama", "Sherry Hany", "Raoul Samer", "Samah Adel", "Sandy Bassem",
+            "Martina Shenoda", "Marina Awad", "Maria Reda", "Mariem Samy", "Ereny Hany",
+            "Josian Yosry", "Magy Naguib", "Bavly Rafek", "Abanoub Adly", "Nabil Essam",
+            "Mohra Ehab", "Merna Sobhy", "Mina Nagah", "Remonda Reda", "Ramez Attallah",
+            "Caroline Boles", "Mohra Hamdy", "Amir Zakaria", "Joy Medhat", "Mohra Safwat"
+        ];
+
+        let userName = '';
+        let userBoxChoice = null; // Track the user's chosen box
+
+        // Adding user to Firestore
+        const userForm = document.getElementById("user-form");
+        userForm.addEventListener("submit", async (e) => {
+            e.preventDefault();
+
+            const name = document.getElementById("name").value;
+
+            if (name) {
+                userName = name; // Store the user's name
+                try {
+                    // Add user to Firestore
+                    const docRef = await db.collection("participants").add({
+                        name: name,
+                        chosenBox: null  // Initially no box is chosen
+                    });
+
+                    alert("You have been added as a participant!");
+                    userForm.reset(); // Clear the form
+                    loadBoxes(); // Load the boxes for selection
+                } catch (e) {
+                    console.error("Error adding document: ", e);
+                    alert("There was an error adding your information.");
+                }
+            } else {
+                alert("Please fill out your name.");
+            }
+        });
+
+        // Function to load boxes with participant names
+        async function loadBoxes() {
+            const boxesContainer = document.getElementById("boxes-container");
+            boxesContainer.innerHTML = "";  // Clear previous boxes
+
+            // Create boxes based on the predefined participants list
+            participants.forEach((name, index) => {
+                const boxContainer = document.createElement("div");
+                boxContainer.classList.add("box-container");
+
+                const tokenLabel = document.createElement("div");
+                tokenLabel.classList.add("token");
+                tokenLabel.textContent = "Token " + (index + 1);  // Token number
+
+                const box = document.createElement("div");
+                box.classList.add("box");
+                box.id = `box-${index}`;
+                box.dataset.index = index;
+                box.textContent = "Closed"; // Text to show for closed box
+                box.addEventListener("click", () => openBox(name, index)); // Pass the name and index
+                box.dataset.name = name; // Store the name inside the box
+
+                // Append the token label and box to the box container
+                boxContainer.appendChild(tokenLabel);
+                boxContainer.appendChild(box);
+                boxesContainer.appendChild(boxContainer);
+
+                // Listen for changes to box status in Firestore
+                db.collection("boxes").doc(`box-${index}`).onSnapshot((doc) => {
+                    const data = doc.data();
+                    const boxElement = document.getElementById(`box-${index}`);
+
+                    if (data && data.isTaken) {
+                        // If box is taken, update the UI
+                        boxElement.textContent = `${data.takenBy} (Token ${index + 1})`;
+                        boxElement.classList.add("opened");
+                        boxElement.style.cursor = "not-allowed"; // Disable further clicks
+                    } else {
+                        // If box is available, show "Closed"
+                        boxElement.textContent = "Closed";
+                        boxElement.classList.remove("opened");
+                        boxElement.style.cursor = "pointer"; // Enable clicking
+                    }
+                });
+            });
+        }
+
+        // Open a box when clicked
+        async function openBox(name, index) {
+            if (!userName) {
+                alert("Please enter your name before choosing a box.");
+                return; // Prevent selecting a box if no name is entered
+            }
+
+            if (userBoxChoice !== null) {
+                alert("You can only open one box.");
+                return; // Prevent opening more than one box
+            }
+
+            const box = document.getElementById(`box-${index}`);
+
+            // Check if box is already taken
+            const docRef = db.collection("boxes").doc(`box-${index}`);
+            const docSnap = await docRef.get();
+            if (docSnap.exists && docSnap.data().isTaken) {
+                alert("This box is already taken.");
+                return; // Prevent opening a taken box
+            }
+
+            // Update the box content and mark it as opened
+            box.textContent = `${name} (Token ${index + 1})`;
+            box.classList.add("opened"); // Add a class to indicate the box is opened
+            userBoxChoice = index; // Track the user's chosen box
+
+            // Store the box choice in Firestore
+            try {
+                // Update box status in Firestore
+                await docRef.set({
+                    isTaken: true,
+                    takenBy: name,
+                });
+
+                // Store the chosen box in the user's document
+                const usersRef = db.collection("participants");
+                const querySnapshot = await usersRef.where("name", "==", userName).get();
+                querySnapshot.forEach((doc) => {
+                    usersRef.doc(doc.id).update({
+                        chosenBox: name // Store the chosen box
+                    });
+                });
+
+                alert("You have chosen box " + (index + 1));
+            } catch (e) {
+                console.error("Error updating box choice: ", e);
+                alert("There was an error updating your box choice.");
+            }
+        }
+
+        // Load the boxes when the page loads
+        window.onload = function () {
+            loadBoxes();
+        };
+    </script>
+</body>
+
+</html>
